@@ -1,0 +1,95 @@
+#!/bin/bash
+# proxy_ctl used for nginx reverse proxy
+# https://github.com/gidcs/proxy_ctl
+# proxy_ctl
+
+EXAMPLE_CONF_DIR="conf"
+NGINX_CONF_DIR="/etc/nginx/conf.d"
+if [ ! -d ${NGINX_CONF_DIR} ]; then
+    echo "The nginx configuration directory does not exist."
+fi
+
+function help {
+    case $1 in
+        "add")
+            echo "Usage: "
+            echo "proxy_ctl add <domain> <ipaddr>"
+            ;;
+        "del")
+            echo "Usage: "
+            echo "proxy_ctl del <domain>"
+            ;;
+        *)
+            echo "Usage: "
+            echo "proxy_ctl add <domain> <ipaddr>"
+            echo "proxy_ctl del <domain>"
+            ;;
+    esac
+    exit 1
+}
+
+function valid_domain {
+    domain=$1
+    ret=`echo ${domain} | awk '/^(([a-zA-Z0-9](-?[a-zA-Z0-9])*)\.)+[a-zA-Z]{2,63}$/'`
+    if [ "${domain}" == "${ret}" ]; then
+        echo 1
+    else
+        echo 0
+    fi
+}
+
+function valid_ip {
+    ipaddr=$1
+    ret=`echo ${ipaddr} | awk -F'.' '$0 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/ && \
+            $1 <=255 && $2 <= 255 && $3 <= 255 && $4 <= 255 '`
+    if [ "${ipaddr}" == "${ret}" ]; then
+        echo 1
+    else
+        echo 0
+    fi
+}
+
+function add_domain {
+    domain=$1
+    ipaddr=$2
+    if [ -f "${NGINX_CONF_DIR}/${domain}.conf" ]; then
+        echo "The file ${NGINX_CONF_DIR}/${domain}.conf exists."
+        exit 0
+    else
+        cp ${EXAMPLE_CONF_DIR}/example.com.conf ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/SERVERNAME/'${domain}'/g' ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/IPADDR/'${ipaddr}'/g' ${NGINX_CONF_DIR}/${domain}.conf
+        service nginx reload &>/dev/null
+        echo "${domain} is ready now."
+    fi
+}
+
+function del_domain {
+    domain=$1
+    if [ -f "${NGINX_CONF_DIR}/${domain}.conf"  ]; then
+        rm -f ${NGINX_CONF_DIR}/${domain}.conf
+        service nginx reload &>/dev/null
+        echo "${domain} is deleted."
+    else
+        echo "The file ${NGINX_CONF_DIR}/${domain}.conf does not exist."
+    fi
+}
+
+case $1 in
+    "add")
+        if [ $# -ne 3 ] || [ "`valid_domain $2`" == "0" ] || \
+            [ "`valid_ip $3`" == "0" ]; then
+            help "add"
+        fi
+        add_domain $2 $3
+        ;;
+    "del")
+        if [ $# -ne 2 ] || [ "`valid_domain $2`" == "0" ]; then
+            help "del"
+        fi
+        del_domain $2
+        ;;
+    *)
+        help
+        ;;
+esac
