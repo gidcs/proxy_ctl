@@ -3,11 +3,68 @@
 # https://github.com/gidcs/proxy_ctl
 # proxy_ctl
 
-EXAMPLE_CONF_DIR="conf"
-NGINX_CONF_DIR="/etc/nginx/conf.d"
+NGINX_DIR="/etc/nginx"
+NGINX_CONF_DIR="${NGINX_DIR}/conf.d"
+NGINX_SSL_DIR="${NGINX_DIR}/ssl"
+NGINX_LOG_DIR="/var/www/logs"
+ACME_SH_DIR="/root/.acme.sh"
+ACME_SH="${ACME_SH_DIR}/acme.sh"
+
+if [ ! -d ${NGINX_DIR} ]; then
+    echo "Please install nginx before using proxy_ctl."
+    exit 1
+fi
 if [ ! -d ${NGINX_CONF_DIR} ]; then
     echo "The nginx configuration directory does not exist."
+    exit 1
 fi
+if [ ! -d ${NGINX_SSL_DIR} ]; then
+    mkdir ${NGINX_SSL_DIR}
+fi
+if [ ! -d ${NGINX_LOG_DIR} ]; then
+    mkdir -p ${NGINX_LOG_DIR}
+fi
+if [ ! -f ${ACME_SH} ]; then
+    echo "Please install acme.sh before using this tool."
+    exit 1
+fi
+
+EXAMPLE_CONF='
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name SERVERNAME;
+    #return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+
+    server_name SERVERNAME;
+
+    access_log  /var/www/logs/SERVERNAME.access.log main;
+    error_log  /var/www/logs/SERVERNAME.error.log error;
+
+    #ssl_certificate /etc/nginx/ssl/SERVERNAME.chained.crt;
+    #ssl_certificate_key /etc/nginx/ssl/SERVERNAME.key;
+
+    #ssl on;
+    #ssl_session_cache shared:SSL:10m;
+    #ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    #ssl_session_timeout  10m;
+    #ssl_ciphers HIGH:!aNULL:!MD5;
+    #ssl_prefer_server_ciphers on;
+
+    location / {
+        proxy_pass http://IPADDR:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}'
 
 function help {
     case $1 in
@@ -49,6 +106,25 @@ function valid_ip {
     fi
 }
 
+function error_ssl {
+    domain=$1
+    rm -f ${NGINX_CONF_DIR}/${domain}.conf
+    rm -f ${NGINX_SSL_DIR}/${domain}.*
+    rm -rf 
+    echo "Error Found! Procedure Terminated."
+    exit 1
+}
+
+function install_ssl {
+    domain=$1
+    ${ACME_SH} --issue -d ${domain} --nginx
+    [ "$?" == "1" ] && error_ssl ${domain}
+    ${ACME_SH} --install-cert -d ${domain} \
+    --key-file       ${NGINX_SSL_DIR}/${domain}.key  \
+    --fullchain-file ${NGINX_SSL_DIR}/${domain}.chained.crt \
+    --reloadcmd     "service nginx force-reload" || error_ssl ${domain}
+}
+
 function add_domain {
     domain=$1
     ipaddr=$2
@@ -56,9 +132,12 @@ function add_domain {
         echo "The file ${NGINX_CONF_DIR}/${domain}.conf exists."
         exit 0
     else
-        cp ${EXAMPLE_CONF_DIR}/example.com.conf ${NGINX_CONF_DIR}/${domain}.conf
+        echo "${EXAMPLE_CONF}" > ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's/SERVERNAME/'${domain}'/g' ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's/IPADDR/'${ipaddr}'/g' ${NGINX_CONF_DIR}/${domain}.conf
+        service nginx reload &>/dev/null
+        install_ssl ${domain}
+        sed -i 's/#//g' ${NGINX_CONF_DIR}/${domain}.conf
         service nginx reload &>/dev/null
         echo "${domain} is ready now."
     fi
@@ -68,6 +147,7 @@ function del_domain {
     domain=$1
     if [ -f "${NGINX_CONF_DIR}/${domain}.conf"  ]; then
         rm -f ${NGINX_CONF_DIR}/${domain}.conf
+        rm -f ${NGINX_SSL_DIR}/${domain}.*
         service nginx reload &>/dev/null
         echo "${domain} is deleted."
     else

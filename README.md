@@ -1,13 +1,20 @@
 # proxy_ctl
 proxy_ctl is a tool designed for simplifing the job of setting reverse proxy when using nginx.
 
+## Installation
+```
+# install acme.sh to support letsencrypt
+wget -O -  https://get.acme.sh | sh
+# install proxy_ctl
+wget -O /usr/bin/proxy_ctl https://raw.githubusercontent.com/gidcs/proxy_ctl/master/proxy_ctl
+chmod 755 /usr/bin/proxy_ctl
+```
+
 ## Usage
-	
-	proxy_ctl add <domain> <ipaddr>
-	proxy_ctl del <domain>
-	
-## Future Work
-- Add letsencrypt for https connection.
+```
+proxy_ctl add <domain> <ipaddr>
+proxy_ctl del <domain>
+```
 
 ## Note
 - This tool is not compatible with mawk. mawk does not support regex's repetition notation.
