@@ -3,8 +3,14 @@ proxy_ctl is a tool designed for simplifing the job of setting reverse proxy whe
 
 ## Installation
 ```
-# install acme.sh to support letsencrypt
+# install nginx
+dnf install nginx
+systemctl enable nginx
+systemctl start nginx
+
+# install acme.sh for https
 wget -O -  https://get.acme.sh | sh
+
 # install proxy_ctl
 wget -O /usr/bin/proxy_ctl https://raw.githubusercontent.com/gidcs/proxy_ctl/master/proxy_ctl
 chmod 755 /usr/bin/proxy_ctl
@@ -12,8 +18,18 @@ chmod 755 /usr/bin/proxy_ctl
 
 ## Usage
 ```
-proxy_ctl add <domain> <ipaddr>
+proxy_ctl list
+proxy_ctl add <domain> <ipaddr:port>
 proxy_ctl del <domain>
+```
+
+## Example
+```
+proxy_ctl list
+proxy_ctl add example.com server.example.com
+proxy_ctl add example.com server.example.com:8080
+proxy_ctl add example.com 10.0.2.15
+proxy_ctl del example.com
 ```
 
 ## Note
