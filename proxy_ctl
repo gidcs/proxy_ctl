@@ -170,7 +170,7 @@ function add_domain {
         echo "The file ${NGINX_CONF_DIR}/${domain}.conf exists."
         exit 0
     else
-        myip=`curl -s ipecho.net/plain`
+        myip=`curl -s https://api.ipify.org`
         domain_ip=`getent hosts ${domain} | awk '{ print $1 }'`
         if [ "${myip}" != "${domain_ip}" ]; then
             echo "Please resolve your domain to ${myip}."
@@ -201,7 +201,12 @@ function del_domain {
 }
 
 function file_exists_wildcard {
-    return ls $1 1> /dev/null 2>&1; 
+  ls $1 > /dev/null 2>&1
+  if [ "$?" == "0" ]; then
+    echo 1
+  else
+      echo 0
+  fi
 }
 
 function list {
