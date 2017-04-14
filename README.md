@@ -1,5 +1,5 @@
 # proxy_ctl
-proxy_ctl is a tool designed for simplifing the job of setting reverse proxy when using nginx.
+proxy_ctl is a tool designed for simplifying the job of setting reverse proxy when using nginx.
 
 ## Installation
 ```
