@@ -58,6 +58,10 @@ server {
     #ssl_prefer_server_ciphers on;
 
     location / {
+    	limit_except GET POST {
+    		deny all;
+    	}
+
         proxy_pass http://ADDRESS;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
