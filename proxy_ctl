@@ -9,6 +9,7 @@ NGINX_SSL_DIR="${NGINX_DIR}/ssl"
 NGINX_LOG_DIR="/var/www/logs"
 ACME_SH_DIR="/root/.acme.sh"
 ACME_SH="${ACME_SH_DIR}/acme.sh"
+DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
 
 if [ ! -d ${NGINX_DIR} ]; then
     echo "Please install nginx before using proxy_ctl."
@@ -27,6 +28,10 @@ fi
 if [ ! -f ${ACME_SH} ]; then
     echo "Please install acme.sh before using this tool."
     exit 1
+fi
+if [ ! -f ${DHPARAM_PEM} ]; then
+    openssl dhparam -out ${DHPARAM_PEM} 2048 || exit 1
+    chmod 400 ${DHPARAM_PEM}
 fi
 
 EXAMPLE_CONF='
@@ -47,15 +52,40 @@ server {
     access_log  /var/www/logs/SERVERNAME.access.log main;
     error_log  /var/www/logs/SERVERNAME.error.log error;
 
-    #ssl_certificate /etc/nginx/ssl/SERVERNAME.chained.crt;
-    #ssl_certificate_key /etc/nginx/ssl/SERVERNAME.key;
+    ##ssl on;
+    ##ssl_session_cache shared:SSL:10m;
+    ##ssl_session_timeout  24h;
+    ##ssl_buffer_size 1400;
+    ##ssl_session_tickets off;
 
-    #ssl on;
-    #ssl_session_cache shared:SSL:10m;
-    #ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-    #ssl_session_timeout  10m;
-    #ssl_ciphers HIGH:!aNULL:!MD5;
-    #ssl_prefer_server_ciphers on;
+    ##ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+
+    ##ssl_prefer_server_ciphers on;
+    ##ssl_ciphers AES256+EECDH:AES256+EDH:!aNULL;
+
+    # certificate and dhparam
+    ##ssl_certificate /etc/nginx/ssl/SERVERNAME.chained.crt;
+    ##ssl_certificate_key /etc/nginx/ssl/SERVERNAME.key;
+    ##ssl_dhparam /etc/nginx/ssl/dhparam.pem;
+
+    # OCSP Stapling
+    ##ssl_stapling on;
+    ##ssl_stapling_verify on;
+    ##resolver 8.8.4.4 8.8.8.8 valid=300s;
+    ##resolver_timeout 10s;
+
+    # SPDY
+    ##spdy_keepalive_timeout 300;
+    ##spdy_headers_comp 9;
+
+    # Enable HSTS
+    ##add_header Strict-Transport-Security max-age=63072000;
+
+    # Do not allow this site to be displayed in iframes
+    ##add_header X-Frame-Options DENY;
+
+    # Do not permit Content-Type sniffing.
+    ##add_header X-Content-Type-Options nosniff;
 
     location / {
     	limit_except GET POST {
@@ -165,6 +195,8 @@ function install_ssl {
     --key-file       ${NGINX_SSL_DIR}/${domain}.key  \
     --fullchain-file ${NGINX_SSL_DIR}/${domain}.chained.crt \
     --reloadcmd     "service nginx force-reload" || error_ssl ${domain}
+    chmod 400 ${NGINX_SSL_DIR}/${domain}.key
+    chmod 400 ${NGINX_SSL_DIR}/${domain}.chained.crt
 }
 
 function add_domain {
@@ -186,7 +218,7 @@ function add_domain {
         sed -i 's/ADDRESS/'${address}'/g' ${NGINX_CONF_DIR}/${domain}.conf
         service nginx reload &>/dev/null
         install_ssl ${domain}
-        sed -i 's/#//g' ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/##//g' ${NGINX_CONF_DIR}/${domain}.conf
         service nginx reload &>/dev/null
         echo "${domain} is ready now."
     fi
