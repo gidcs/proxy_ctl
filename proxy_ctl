@@ -40,7 +40,11 @@ server {
     listen [::]:80;
 
     server_name SERVERNAME;
-    #return 301 https://$host$request_uri;
+
+    location / {
+
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -88,9 +92,9 @@ server {
     ##add_header X-Content-Type-Options nosniff;
 
     location / {
-    	limit_except GET POST {
-    		deny all;
-    	}
+        limit_except GET POST {
+            deny all;
+        }
 
         proxy_pass http://ADDRESS;
         proxy_set_header Host $host;
@@ -207,9 +211,13 @@ function add_domain {
         exit 0
     else
         myip=`curl -s https://api.ipify.org`
-        domain_ip=`getent hosts ${domain} | awk '{ print $1 }'`
-        if [ "${myip}" != "${domain_ip}" ]; then
+        domain_ip_v4=`getent ahostsv4 ${domain} | awk '{ print $1 }' | uniq | head -n 1`
+        domain_ip_v6=`getent ahostsv6 ${domain} | awk '{ print $1 }' | uniq | head -n 1`
+        if [ "${myip}" != "${domain_ip_v4}" ] && [ "${myip}" != "${domain_ip_v6}" ]; then
             echo "Please resolve your domain to ${myip}."
+            echo "Now: "
+            echo "    ipv4: ${domain_ip_v4}"
+            echo "    ipv6: ${domain_ip_v6}"
             exit 1
         fi
 
@@ -224,9 +232,16 @@ function add_domain {
     fi
 }
 
+function uninstall_ssl {
+    domain=$1
+    ${ACME_SH} --remove -d ${domain}
+    rm -rf ${ACME_SH_DIR}/${domain}
+}
+
 function del_domain {
     domain=$1
     if [ -f "${NGINX_CONF_DIR}/${domain}.conf"  ]; then
+        uninstall_ssl ${domain}
         rm -f ${NGINX_CONF_DIR}/${domain}.conf
         rm -f ${NGINX_SSL_DIR}/${domain}.*
         service nginx reload &>/dev/null
