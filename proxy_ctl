@@ -4,6 +4,7 @@
 # proxy_ctl
 
 NGINX_DIR="/etc/nginx"
+NGINX_DIR_DOCKER="/var/lib/nginx/"
 NGINX_CONF_DIR="${NGINX_DIR}/conf.d"
 NGINX_SSL_DIR="${NGINX_DIR}/ssl"
 NGINX_LOG_DIR="/var/www/logs"
@@ -15,6 +16,14 @@ if [ ! -d ${NGINX_DIR} ]; then
     echo "Please install nginx before using proxy_ctl."
     exit 1
 fi
+
+# special case when use inside docker
+# let them in same directory which could be bound from host volume
+if [ -d ${NGINX_DIR_DOCKER} ]; then
+    NGINX_CONF_DIR="${NGINX_DIR_DOCKER}/vhost"
+    NGINX_SSL_DIR="${NGINX_DIR_DOCKER}/ssl"
+fi
+
 if [ ! -d ${NGINX_CONF_DIR} ]; then
     echo "The nginx configuration directory does not exist."
     exit 1
