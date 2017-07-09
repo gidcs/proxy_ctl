@@ -11,6 +11,7 @@ NGINX_LOG_DIR="/var/www/logs"
 ACME_SH_DIR="/root/.acme.sh"
 ACME_SH="${ACME_SH_DIR}/acme.sh"
 DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
+NGINX_RELOAD='service nginx force-reload'
 
 if [ ! -d ${NGINX_DIR} ]; then
     echo "Please install nginx before using proxy_ctl."
@@ -24,6 +25,7 @@ if [ -d ${NGINX_DIR_DOCKER} ]; then
     NGINX_SSL_DIR="${NGINX_DIR_DOCKER}/ssl"
     NGINX_LOG_DIR="${NGINX_DIR_DOCKER}/log"
     DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
+    NGINX_RELOAD='nginx -s reload'
 fi
 
 if [ ! -d ${NGINX_CONF_DIR} ]; then
@@ -209,7 +211,7 @@ function install_ssl {
     ${ACME_SH} --install-cert -d ${domain} \
     --key-file       ${NGINX_SSL_DIR}/${domain}.key  \
     --fullchain-file ${NGINX_SSL_DIR}/${domain}.chained.crt \
-    --reloadcmd     "service nginx force-reload" || error_ssl ${domain}
+    --reloadcmd     "${NGINX_RELOAD}" || error_ssl ${domain}
     chmod 400 ${NGINX_SSL_DIR}/${domain}.key
     chmod 400 ${NGINX_SSL_DIR}/${domain}.chained.crt
 }
@@ -235,12 +237,12 @@ function add_domain {
         echo "${EXAMPLE_CONF}" > ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's/SERVERNAME/'${domain}'/g' ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's/ADDRESS/'${address}'/g' ${NGINX_CONF_DIR}/${domain}.conf
-        service nginx reload &>/dev/null
+        sed -i 's|NGINX_SSL_DIR|'${NGINX_SSL_DIR}'|g' ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's|NGINX_LOG_DIR|'${NGINX_LOG_DIR}'|g' ${NGINX_CONF_DIR}/${domain}.conf
+        NGINX_RELOAD &>/dev/null
         install_ssl ${domain}
         sed -i 's/##//g' ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's/NGINX_SSL_DIR/'${NGINX_SSL_DIR}'/g' ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's/NGINX_LOG_DIR/'${NGINX_LOG_DIR}'/g' ${NGINX_CONF_DIR}/${domain}.conf
-        service nginx reload &>/dev/null
+        NGINX_RELOAD &>/dev/null
         echo "${domain} is ready now."
     fi
 }
@@ -257,7 +259,7 @@ function del_domain {
         uninstall_ssl ${domain}
         rm -f ${NGINX_CONF_DIR}/${domain}.conf
         rm -f ${NGINX_SSL_DIR}/${domain}.*
-        service nginx reload &>/dev/null
+        NGINX_RELOAD &>/dev/null
         echo "${domain} is deleted."
     else
         echo "The file ${NGINX_CONF_DIR}/${domain}.conf does not exist."
