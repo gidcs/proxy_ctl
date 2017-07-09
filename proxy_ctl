@@ -70,15 +70,14 @@ server {
     error_log  NGINX_LOG_DIR/SERVERNAME.error.log error;
 
     ##ssl on;
+    ##ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
+    ##ssl_protocols TLSv1.2;
+    ##ssl_ecdh_curve secp384r1;
     ##ssl_session_cache shared:SSL:10m;
     ##ssl_session_timeout  24h;
     ##ssl_buffer_size 1400;
     ##ssl_session_tickets off;
-
-    ##ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-
     ##ssl_prefer_server_ciphers on;
-    ##ssl_ciphers AES256+EECDH:AES256+EDH:!aNULL;
 
     # certificate and dhparam
     ##ssl_certificate NGINX_SSL_DIR/SERVERNAME.chained.crt;
@@ -89,11 +88,10 @@ server {
     ##ssl_stapling on;
     ##ssl_stapling_verify on;
     ##resolver 8.8.4.4 8.8.8.8 valid=300s;
-    ##resolver_timeout 10s;
+    ##resolver_timeout 5s;
 
     # SPDY
-    ##spdy_keepalive_timeout 300;
-    ##spdy_headers_comp 9;
+    ##http2_idle_timeout 300;
 
     # Enable HSTS
     ##add_header Strict-Transport-Security max-age=63072000;
