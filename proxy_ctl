@@ -4,7 +4,7 @@
 # proxy_ctl
 
 NGINX_DIR="/etc/nginx"
-NGINX_DIR_DOCKER="/var/lib/nginx/"
+NGINX_DIR_DOCKER="/var/lib/nginx"
 NGINX_CONF_DIR="${NGINX_DIR}/conf.d"
 NGINX_SSL_DIR="${NGINX_DIR}/ssl"
 NGINX_LOG_DIR="/var/www/logs"
@@ -22,6 +22,8 @@ fi
 if [ -d ${NGINX_DIR_DOCKER} ]; then
     NGINX_CONF_DIR="${NGINX_DIR_DOCKER}/vhost"
     NGINX_SSL_DIR="${NGINX_DIR_DOCKER}/ssl"
+    NGINX_LOG_DIR="${NGINX_DIR_DOCKER}/log"
+    DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
 fi
 
 if [ ! -d ${NGINX_CONF_DIR} ]; then
@@ -62,8 +64,8 @@ server {
 
     server_name SERVERNAME;
 
-    access_log  /var/www/logs/SERVERNAME.access.log main;
-    error_log  /var/www/logs/SERVERNAME.error.log error;
+    access_log  NGINX_LOG_DIR/SERVERNAME.access.log main;
+    error_log  NGINX_LOG_DIR/SERVERNAME.error.log error;
 
     ##ssl on;
     ##ssl_session_cache shared:SSL:10m;
@@ -77,9 +79,9 @@ server {
     ##ssl_ciphers AES256+EECDH:AES256+EDH:!aNULL;
 
     # certificate and dhparam
-    ##ssl_certificate /etc/nginx/ssl/SERVERNAME.chained.crt;
-    ##ssl_certificate_key /etc/nginx/ssl/SERVERNAME.key;
-    ##ssl_dhparam /etc/nginx/ssl/dhparam.pem;
+    ##ssl_certificate NGINX_SSL_DIR/SERVERNAME.chained.crt;
+    ##ssl_certificate_key NGINX_SSL_DIR/SERVERNAME.key;
+    ##ssl_dhparam NGINX_SSL_DIR/dhparam.pem;
 
     # OCSP Stapling
     ##ssl_stapling on;
@@ -236,6 +238,8 @@ function add_domain {
         service nginx reload &>/dev/null
         install_ssl ${domain}
         sed -i 's/##//g' ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/NGINX_SSL_DIR/'${NGINX_SSL_DIR}'/g' ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/NGINX_LOG_DIR/'${NGINX_LOG_DIR}'/g' ${NGINX_CONF_DIR}/${domain}.conf
         service nginx reload &>/dev/null
         echo "${domain} is ready now."
     fi
