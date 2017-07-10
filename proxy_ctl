@@ -222,9 +222,16 @@ function add_domain {
         exit 0
     else
         myip=`curl -s https://api.ipify.org`
-        domain_ip_v4=`getent ahostsv4 ${domain} | awk '{ print $1 }' | uniq | head -n 1`
-        domain_ip_v6=`getent ahostsv6 ${domain} | awk '{ print $1 }' | uniq | head -n 1`
-        if [ "${myip}" != "${domain_ip_v4}" ] && [ "${myip}" != "${domain_ip_v6}" ]; then
+        domain_ip_v4=`
+            getent ahostsv4 ${domain} | \
+                awk '{ print $1 }' | uniq | head -n 1
+        `
+        domain_ip_v6=`
+            getent ahostsv6 ${domain} | \
+                awk '{ print $1 }' | uniq | head -n 1
+        `
+        if [ "${myip}" != "${domain_ip_v4}" ] &&
+            [ "${myip}" != "${domain_ip_v6}" ]; then
             echo "Please resolve your domain to ${myip}."
             echo "Now: "
             echo "    ipv4: ${domain_ip_v4}"
@@ -233,10 +240,14 @@ function add_domain {
         fi
 
         echo "${EXAMPLE_CONF}" > ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's/SERVERNAME/'${domain}'/g' ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's/ADDRESS/'${address}'/g' ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's|NGINX_SSL_DIR|'${NGINX_SSL_DIR}'|g' ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's|NGINX_LOG_DIR|'${NGINX_LOG_DIR}'|g' ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/SERVERNAME/'${domain}'/g' \
+            ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's/ADDRESS/'${address}'/g' \
+            ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's|NGINX_SSL_DIR|'${NGINX_SSL_DIR}'|g' \
+            ${NGINX_CONF_DIR}/${domain}.conf
+        sed -i 's|NGINX_LOG_DIR|'${NGINX_LOG_DIR}'|g' \
+            ${NGINX_CONF_DIR}/${domain}.conf
         NGINX_RELOAD &>/dev/null
         install_ssl ${domain}
         sed -i 's/##//g' ${NGINX_CONF_DIR}/${domain}.conf
