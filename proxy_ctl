@@ -129,7 +129,7 @@ function help {
             echo "Usage: "
             echo "proxy_ctl list"
             echo "proxy_ctl add <domain> <ipaddr:port>"
-            echo "proxy_ctl del <domain>"
+            echo "proxy_ctl del <domain> [--force]"
             echo " "
             echo "Example: "
             echo "proxy_ctl list"
@@ -264,8 +264,11 @@ function uninstall_ssl {
 
 function del_domain {
     domain=$1
+    force_remove_flag=$2
     if [ -f "${NGINX_CONF_DIR}/${domain}.conf"  ]; then
-        uninstall_ssl ${domain}
+        if [ "${force_remove_flag}" == "--force" ]; then
+            uninstall_ssl ${domain}
+        fi
         rm -f ${NGINX_CONF_DIR}/${domain}.conf
         rm -f ${NGINX_SSL_DIR}/${domain}.*
         NGINX_RELOAD &>/dev/null
@@ -318,17 +321,19 @@ case $1 in
         list
         ;;
     "add")
-        if [ $# -ne 3 ] || [ "`valid_domain $2`" == "0" ] || \
+        if [ $# -lt 3 ] || [ "`valid_domain $2`" == "0" ] || \
             [ "`valid_address $3`" == "0" ]; then
             help "add"
         fi
-        add_domain $2 $3
+        shift 1
+        add_domain $*
         ;;
     "del")
-        if [ $# -ne 2 ] || [ "`valid_domain $2`" == "0" ]; then
+        if [ $# -lt 2 ] || [ "`valid_domain $2`" == "0" ]; then
             help "del"
         fi
-        del_domain $2
+        shift 1
+        del_domain $*
         ;;
     *)
         help
