@@ -276,7 +276,7 @@ function file_exists_wildcard {
 function list {
     echo "domain   proxy_address"
     echo "------   -------------"
-    if [ `file_exists_wildcard ${NGINX_CONF_DIR}/*.conf` ]; then
+    if [ `file_exists_wildcard ${NGINX_CONF_DIR}/*.conf` == "1" ]; then
         for f in ${NGINX_CONF_DIR}/*.conf
         do
             proxy_address=`
