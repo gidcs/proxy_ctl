@@ -19,8 +19,8 @@ chmod 755 /usr/bin/proxy_ctl
 ## Usage
 ```
 proxy_ctl list
-proxy_ctl add <domain> <ipaddr:port>
-proxy_ctl del <domain>
+proxy_ctl add <domain> <ipaddr:port> [--https] [--force]
+proxy_ctl del <domain> [--force]
 ```
 
 ## Example
@@ -28,8 +28,11 @@ proxy_ctl del <domain>
 proxy_ctl list
 proxy_ctl add example.com server.example.com
 proxy_ctl add example.com server.example.com:8080
-proxy_ctl add example.com 10.0.2.15
+proxy_ctl add example.com server.example.com --https # proxy https website
+proxy_ctl add example.com 10.0.2.1 --force # don't send hostname to backend
+proxy_ctl add example.com 10.0.2.1
 proxy_ctl del example.com
+proxy_ctl del example.com --force # remove acme.sh's ssl also
 ```
 
 ## Note
