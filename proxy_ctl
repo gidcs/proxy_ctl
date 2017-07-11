@@ -107,8 +107,9 @@ server {
             deny all;
         }
 
-        proxy_pass http://ADDRESS;
-        proxy_set_header Host $host;
+        proxy_pass ADDRESS;
+        ###proxy_set_header Host $host;
+        proxy_set_header Referer $http_referer;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -119,24 +120,26 @@ function help {
     case $1 in
         "add")
             echo "Usage: "
-            echo "proxy_ctl add <domain> <ipaddr:port>"
+            echo "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
             ;;
         "del")
             echo "Usage: "
-            echo "proxy_ctl del <domain>"
+            echo "proxy_ctl del <domain> [--force]"
             ;;
         *)
             echo "Usage: "
             echo "proxy_ctl list"
-            echo "proxy_ctl add <domain> <ipaddr:port>"
+            echo "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
             echo "proxy_ctl del <domain> [--force]"
             echo " "
             echo "Example: "
             echo "proxy_ctl list"
             echo "proxy_ctl add example.com server.example.com"
             echo "proxy_ctl add example.com server.example.com:8080"
+            echo "proxy_ctl add example.com server.example.com --https"
             echo "proxy_ctl add example.com 10.0.2.15"
             echo "proxy_ctl del example.com"
+            echo "proxy_ctl del example.com --force"
             ;;
     esac
     exit 1
@@ -217,6 +220,17 @@ function install_ssl {
 function add_domain {
     domain=$1
     address=$2
+    proto="http"
+    force_proxy=""
+    shift 2
+    for arg in $*
+    do
+        if [ "$arg" == "--https" ]; then
+            proto="https"
+        elif [ "$arg" == "--force" ]; then
+            force_proxy="force"
+        fi
+    done
     if [ -f "${NGINX_CONF_DIR}/${domain}.conf" ]; then
         echo "The file ${NGINX_CONF_DIR}/${domain}.conf exists."
         exit 0
@@ -242,12 +256,17 @@ function add_domain {
         echo "${EXAMPLE_CONF}" > ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's/SERVERNAME/'${domain}'/g' \
             ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's/ADDRESS/'${address}'/g' \
+        sed -i 's|ADDRESS|'${proto}://${address}'|g' \
             ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's|NGINX_SSL_DIR|'${NGINX_SSL_DIR}'|g' \
             ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's|NGINX_LOG_DIR|'${NGINX_LOG_DIR}'|g' \
             ${NGINX_CONF_DIR}/${domain}.conf
+        if [ ${force_proxy} == "" ]; then
+            sed -i 's/###//g' ${NGINX_CONF_DIR}/${domain}.conf
+        else
+            sed -i '/###/d' ${NGINX_CONF_DIR}/${domain}.conf
+        fi
         NGINX_RELOAD &>/dev/null
         install_ssl ${domain}
         sed -i 's/##//g' ${NGINX_CONF_DIR}/${domain}.conf
