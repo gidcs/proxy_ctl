@@ -13,14 +13,14 @@ ACME_SH="${ACME_SH_DIR}/acme.sh"
 DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
 NGINX_RELOAD='service nginx force-reload'
 
-if [ ! -d ${NGINX_DIR} ]; then
+if [ ! -d "${NGINX_DIR}" ]; then
     echo "Please install nginx before using proxy_ctl."
     exit 1
 fi
 
 # special case when use inside docker
 # let them in same directory which could be bound from host volume
-if [ -d ${NGINX_DIR_DOCKER} ]; then
+if [ -d "${NGINX_DIR_DOCKER}/vhost" ]; then
     NGINX_CONF_DIR="${NGINX_DIR_DOCKER}/vhost"
     NGINX_SSL_DIR="${NGINX_DIR_DOCKER}/ssl"
     NGINX_LOG_DIR="${NGINX_DIR_DOCKER}/log"
@@ -28,21 +28,21 @@ if [ -d ${NGINX_DIR_DOCKER} ]; then
     NGINX_RELOAD='nginx -s reload'
 fi
 
-if [ ! -d ${NGINX_CONF_DIR} ]; then
+if [ ! -d "${NGINX_CONF_DIR}" ]; then
     echo "The nginx configuration directory does not exist."
     exit 1
 fi
-if [ ! -d ${NGINX_SSL_DIR} ]; then
+if [ ! -d "${NGINX_SSL_DIR}" ]; then
     mkdir ${NGINX_SSL_DIR}
 fi
-if [ ! -d ${NGINX_LOG_DIR} ]; then
+if [ ! -d "${NGINX_LOG_DIR}" ]; then
     mkdir -p ${NGINX_LOG_DIR}
 fi
-if [ ! -f ${ACME_SH} ]; then
+if [ ! -f "${ACME_SH}" ]; then
     echo "Please install acme.sh before using this tool."
     exit 1
 fi
-if [ ! -f ${DHPARAM_PEM} ]; then
+if [ ! -f "${DHPARAM_PEM}" ]; then
     openssl dhparam -out ${DHPARAM_PEM} 2048 || exit 1
     chmod 400 ${DHPARAM_PEM}
 fi
@@ -55,7 +55,6 @@ server {
     server_name SERVERNAME;
 
     location / {
-
         return 301 https://$host$request_uri;
     }
 }
@@ -262,7 +261,7 @@ function add_domain {
             ${NGINX_CONF_DIR}/${domain}.conf
         sed -i 's|NGINX_LOG_DIR|'${NGINX_LOG_DIR}'|g' \
             ${NGINX_CONF_DIR}/${domain}.conf
-        if [ ${force_proxy} == "" ]; then
+        if [ "${force_proxy}" == "" ]; then
             sed -i 's/###//g' ${NGINX_CONF_DIR}/${domain}.conf
         else
             sed -i '/###/d' ${NGINX_CONF_DIR}/${domain}.conf
@@ -309,7 +308,7 @@ function file_exists_wildcard {
 function list {
     echo "domain   proxy_address"
     echo "------   -------------"
-    if [ `file_exists_wildcard ${NGINX_CONF_DIR}/*.conf` == "1" ]; then
+    if [ "`file_exists_wildcard ${NGINX_CONF_DIR}/*.conf`" == "1" ]; then
         for f in ${NGINX_CONF_DIR}/*.conf
         do
             proxy_address=`
