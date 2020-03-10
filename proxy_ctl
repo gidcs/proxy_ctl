@@ -185,6 +185,8 @@ function valid_domain {
         gawk '/^(([a-zA-Z0-9](-?[a-zA-Z0-9])*)\.)+[a-zA-Z]{2,63}$/')
     if [ "${input}" == "${ret}" ]; then
         echo 0
+    elif [ "${input}" == "localhost" ]; then
+        echo 0
     else
         echo 1
     fi
