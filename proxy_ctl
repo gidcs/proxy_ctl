@@ -106,6 +106,11 @@ function root_check {
     if [ "$(id -u)" != "0" ]; then
         error "You must be root to run this script, use sudo $0."
     fi
+
+    # to bypass check of acme.sh
+    if [ "$SUDO_COMMAND" ]; then
+        SUDO_COMMAND="/bin/bash"
+    fi
 }
 
 function prev_check {
@@ -250,8 +255,8 @@ function error_ssl {
 function install_ssl {
     local domain=$1
 
-    "${ACME_SH}" --force --issue -d "${domain}" --nginx || error_ssl "${domain}"
-    "${ACME_SH}" --force --install-cert -d "${domain}" \
+    "${ACME_SH}" --issue -d "${domain}" --nginx
+    "${ACME_SH}" --install-cert -d "${domain}" \
         --key-file       "${NGINX_SSL_DIR}/${domain}.key"  \
         --fullchain-file "${NGINX_SSL_DIR}/${domain}.chained.crt" \
         --reloadcmd     "${NGINX_RELOAD}" || error_ssl "${domain}"
@@ -318,7 +323,7 @@ function add_domain {
 function uninstall_ssl {
     local domain=$1
 
-    "${ACME_SH}" --force --remove -d "${domain}"
+    "${ACME_SH}" --remove -d "${domain}"
     rm -rf "${ACME_SH_DIR:?}/${domain}"
 }
 
