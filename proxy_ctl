@@ -4,49 +4,14 @@
 # proxy_ctl
 
 NGINX_DIR="/etc/nginx"
-NGINX_DIR_DOCKER="/var/lib/nginx"
 NGINX_CONF_DIR="${NGINX_DIR}/conf.d"
 NGINX_SSL_DIR="${NGINX_DIR}/ssl"
-NGINX_LOG_DIR="/var/www/logs"
+NGINX_LOG_DIR="/var/log/nginx"
 ACME_SH_DIR="/root/.acme.sh"
 ACME_SH="${ACME_SH_DIR}/acme.sh"
+
 DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
-NGINX_RELOAD='service nginx force-reload'
-
-if [ ! -d "${NGINX_DIR}" ]; then
-    echo "Please install nginx before using proxy_ctl."
-    exit 1
-fi
-
-# special case when use inside docker
-# let them in same directory which could be bound from host volume
-if [ -d "${NGINX_DIR_DOCKER}/vhost" ]; then
-    NGINX_CONF_DIR="${NGINX_DIR_DOCKER}/vhost"
-    NGINX_SSL_DIR="${NGINX_DIR_DOCKER}/ssl"
-    NGINX_LOG_DIR="${NGINX_DIR_DOCKER}/log"
-    DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
-    NGINX_RELOAD='nginx -s reload'
-fi
-
-if [ ! -d "${NGINX_CONF_DIR}" ]; then
-    echo "The nginx configuration directory does not exist."
-    exit 1
-fi
-if [ ! -d "${NGINX_SSL_DIR}" ]; then
-    mkdir ${NGINX_SSL_DIR}
-fi
-if [ ! -d "${NGINX_LOG_DIR}" ]; then
-    mkdir -p ${NGINX_LOG_DIR}
-fi
-if [ ! -f "${ACME_SH}" ]; then
-    echo "Please install acme.sh before using this tool."
-    exit 1
-fi
-if [ ! -f "${DHPARAM_PEM}" ]; then
-    openssl dhparam -out ${DHPARAM_PEM} 2048 || exit 1
-    chmod 400 ${DHPARAM_PEM}
-fi
-
+NGINX_RELOAD='systemctl force-reload nginx'
 EXAMPLE_CONF='
 server {
     listen 80;
@@ -96,15 +61,15 @@ server {
     ##add_header Strict-Transport-Security max-age=63072000;
 
     # Do not allow this site to be displayed in iframes
-    ##add_header X-Frame-Options DENY;
+    #add_header X-Frame-Options DENY;
 
     # Do not permit Content-Type sniffing.
     ##add_header X-Content-Type-Options nosniff;
 
     location / {
-        limit_except GET POST {
-            deny all;
-        }
+        #limit_except GET POST {
+        #    deny all;
+        #}
 
         proxy_pass ADDRESS;
         ###proxy_set_header Host $host;
@@ -112,246 +77,327 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Required for web sockets to function
+        #cockpit#proxy_http_version 1.1;
+        #cockpit#proxy_buffering off;
+        #cockpit#proxy_set_header Upgrade $http_upgrade;
+        #cockpit#proxy_set_header Connection "upgrade";
+
+        # Pass ETag header from Cockpit to clients.
+        # See: https://github.com/cockpit-project/cockpit/issues/5239
+        #cockpit#gzip off;
     }
 }'
 
+function print {
+    local statements="$*"
+    echo -e "${statements}"
+}
+
+function error {
+    local statements="$*"
+    print "[E] ${statements}"
+    exit -1
+}
+
+function root_check {
+    # Check if user is root
+    if [ "$(id -u)" != "0" ]; then
+        error "You must be root to run this script, use sudo $0."
+    fi
+}
+
+function prev_check {
+    local pkg=(
+        "curl"
+        "gawk"
+        "nginx"
+        "openssl"
+    )
+
+    for i in "${pkg[@]}"
+    do
+        if [ -z "$(command -v "${i}")" ]; then
+            error "Please install ${i} before using proxy_ctl."
+        fi
+    done
+
+    if [ ! -f "${ACME_SH}" ]; then
+        echo "Please install acme.sh before using this tool."
+        exit 1
+    fi
+
+    if [ ! -d "${NGINX_CONF_DIR}" ]; then
+        error "The nginx configuration directory does not exist."
+    fi
+    if [ ! -d "${NGINX_SSL_DIR}" ]; then
+        mkdir ${NGINX_SSL_DIR}
+    fi
+    if [ ! -d "${NGINX_LOG_DIR}" ]; then
+        mkdir -p ${NGINX_LOG_DIR}
+    fi
+    if [ ! -f "${DHPARAM_PEM}" ]; then
+        openssl dhparam -out ${DHPARAM_PEM} 2048 || \
+            error "Failed to generate ${DHPARAM_PEM}."
+        chmod 400 ${DHPARAM_PEM}
+    fi
+}
+
 function help {
-    case $1 in
+    local input=$1
+
+    case "${input}" in
         "add")
-            echo "Usage: "
-            echo "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
+            print "Usage: "
+            print "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
             ;;
         "del")
-            echo "Usage: "
-            echo "proxy_ctl del <domain> [--force]"
+            print "Usage: "
+            print "proxy_ctl del <domain> [--force]"
             ;;
         *)
-            echo "Usage: "
-            echo "proxy_ctl list"
-            echo "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
-            echo "proxy_ctl del <domain> [--force]"
-            echo " "
-            echo "Example: "
-            echo "proxy_ctl list"
-            echo "proxy_ctl add example.com server.example.com"
-            echo "proxy_ctl add example.com server.example.com:8080"
-            echo "proxy_ctl add example.com server.example.com --https"
-            echo "proxy_ctl add example.com 10.0.2.15"
-            echo "proxy_ctl del example.com"
-            echo "proxy_ctl del example.com --force"
+            print "Usage: "
+            print "proxy_ctl list"
+            print "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
+            print "proxy_ctl del <domain> [--force]"
+            print ""
+            print "Example: "
+            print "proxy_ctl list"
+            print "proxy_ctl add example.com server.example.com"
+            print "proxy_ctl add example.com server.example.com:8080"
+            print "proxy_ctl add example.com server.example.com --https"
+            print "proxy_ctl add example.com 10.0.2.15"
+            print "proxy_ctl add example.com 10.0.2.15 --force"
+            print "proxy_ctl add example.com localhost:9090 --cockpit"
+            print "proxy_ctl del example.com"
+            print "proxy_ctl del example.com --force"
             ;;
     esac
     exit 1
 }
 
 function valid_domain {
-    domain=$1
-    ret=`echo ${domain} | \
-        awk '/^(([a-zA-Z0-9](-?[a-zA-Z0-9])*)\.)+[a-zA-Z]{2,63}$/'`
-    if [ "${domain}" == "${ret}" ]; then
-        echo 1
-    else
+    local input=$1
+    local ret=""
+
+    ret=$(echo "${input}" | \
+        gawk '/^(([a-zA-Z0-9](-?[a-zA-Z0-9])*)\.)+[a-zA-Z]{2,63}$/')
+    if [ "${input}" == "${ret}" ]; then
         echo 0
+    else
+        echo 1
     fi
 }
 
 function valid_ip {
-    ipaddr=$1
-    ret=`echo ${ipaddr} | \
-        awk -F'.' '$0 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/ && \
-        $1 <=255 && $2 <= 255 && $3 <= 255 && $4 <= 255 '`
-    if [ "${ipaddr}" == "${ret}" ]; then
-        echo 1
-    else
+    local input=$1
+    local ret=""
+
+    ret=$(echo "${input}" | \
+        gawk -F'.' '$0 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/ &&
+            $1 <=255 && $2 <= 255 && $3 <= 255 && $4 <= 255')
+    if [ "${input}" == "${ret}" ]; then
         echo 0
+    else
+        echo 1
     fi
 }
 
 function valid_port {
-    port=$1
-    ret=`echo ${port} | \
-        awk '$0 ~ /^([0-9]{1,5})$/ && $0 >= 1 && $0 <= 65535'`
-    if [ "${port}" == "${ret}" ]; then
-        echo 1
-    elif [ "${port}" == "" ]; then
-        echo 1
-    else
+    local input=$1
+    local ret=""
+
+    ret=$(echo "${input}" | \
+        gawk '$0 ~ /^([0-9]{1,5})$/ && $0 >= 1 && $0 <= 65535')
+    if [ "${input}" == "${ret}" ]; then
         echo 0
+    elif [ "${input}" == "" ]; then
+        echo 0
+    else
+        echo 1
     fi
 }
 
 function valid_address {
-    address=$1
-    addr=`echo ${address} | awk -F':' '{ print $1 }'`
-    port=`echo ${address} | awk -F':' '{ print $2 }'`
-    if [ "`valid_ip ${addr}`" == "1" ] && \
-        [ "`valid_port ${port}`" == "1" ]; then
-        echo 1
-    elif [ "`valid_domain ${addr}`" == "1" ] && \
-        [ "`valid_port ${port}`" == "1" ]; then
-        echo 1
-    else
+    local input=$1
+    local addr=""
+    local port=""
+
+    addr=$(echo "${input}" | gawk -F':' '{ print $1 }')
+    port=$(echo "${input}" | gawk -F':' '{ print $2 }')
+    if [ "$(valid_ip "${addr}")" == "0" ] && \
+        [ "$(valid_port "${port}")" == "0" ]; then
         echo 0
+    elif [ "$(valid_domain "${addr}")" == "0" ] && \
+        [ "$(valid_port "${port}")" == "0" ]; then
+        echo 0
+    else
+        echo 1
     fi
 }
 
 function error_ssl {
-    domain=$1
-    rm -f ${NGINX_CONF_DIR}/${domain}.conf
-    rm -f ${NGINX_SSL_DIR}/${domain}.*
-    rm -rf 
-    echo "Error Found! Procedure Terminated."
-    exit 1
+    local domain=$1
+
+    rm -f "${NGINX_CONF_DIR}/${domain}.conf"
+    rm -f "${NGINX_SSL_DIR}/${domain}".*
+    error "Error Found! Procedure Terminated."
 }
 
 function install_ssl {
-    domain=$1
-    ${ACME_SH} --issue -d ${domain} --nginx
-    [ "$?" == "1" ] && error_ssl ${domain}
-    ${ACME_SH} --install-cert -d ${domain} \
-    --key-file       ${NGINX_SSL_DIR}/${domain}.key  \
-    --fullchain-file ${NGINX_SSL_DIR}/${domain}.chained.crt \
-    --reloadcmd     "${NGINX_RELOAD}" || error_ssl ${domain}
-    chmod 400 ${NGINX_SSL_DIR}/${domain}.key
-    chmod 400 ${NGINX_SSL_DIR}/${domain}.chained.crt
+    local domain=$1
+
+    "${ACME_SH}" --force --issue -d "${domain}" --nginx || error_ssl "${domain}"
+    "${ACME_SH}" --force --install-cert -d "${domain}" \
+        --key-file       "${NGINX_SSL_DIR}/${domain}.key"  \
+        --fullchain-file "${NGINX_SSL_DIR}/${domain}.chained.crt" \
+        --reloadcmd     "${NGINX_RELOAD}" || error_ssl "${domain}"
+    chmod 400 "${NGINX_SSL_DIR}/${domain}".*
 }
 
 function add_domain {
-    domain=$1
-    address=$2
-    proto="http"
-    force_proxy=""
+    local domain=$1
+    local address=$2
+    local proto="http"
+    local force_proxy=""
+    local cockpit=""
+    local nginx_conf="${NGINX_CONF_DIR}/${domain}.conf"
+
     shift 2
-    for arg in $*
+    for arg in "$@"
     do
         if [ "$arg" == "--https" ]; then
             proto="https"
         elif [ "$arg" == "--force" ]; then
             force_proxy="force"
+        elif [ "$arg" == "--cockpit" ]; then
+            cockpit="cockpit"
         fi
     done
-    if [ -f "${NGINX_CONF_DIR}/${domain}.conf" ]; then
-        echo "The file ${NGINX_CONF_DIR}/${domain}.conf exists."
-        exit 0
+
+    if [ -f "${nginx_conf}" ]; then
+        error "The file ${nginx_conf} exists."
     else
-        myip=`curl -s https://api.ipify.org`
-        domain_ip_v4=`
-            getent ahostsv4 ${domain} | \
-                awk '{ print $1 }' | uniq | head -n 1
-        `
-        domain_ip_v6=`
-            getent ahostsv6 ${domain} | \
-                awk '{ print $1 }' | uniq | head -n 1
-        `
+        myip=$(curl -s https://api.ipify.org)
+        domain_ip_v4=$(getent ahostsv4 "${domain}" | \
+                gawk '{ print $1 }' | uniq | head -n 1)
+        domain_ip_v6=$(getent ahostsv6 "${domain}" | \
+                gawk '{ print $1 }' | uniq | head -n 1)
         if [ "${myip}" != "${domain_ip_v4}" ] &&
             [ "${myip}" != "${domain_ip_v6}" ]; then
-            echo "Please resolve your domain to ${myip}."
-            echo "Now: "
-            echo "    ipv4: ${domain_ip_v4}"
-            echo "    ipv6: ${domain_ip_v6}"
-            exit 1
+            error "Please resolve your domain to ${myip}.\n"+
+                    "Now: \n"+
+                    "    ipv4: ${domain_ip_v4}\n"+
+                    "    ipv6: ${domain_ip_v6}\n"
         fi
 
-        echo "${EXAMPLE_CONF}" > ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's/SERVERNAME/'${domain}'/g' \
-            ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's|ADDRESS|'${proto}://${address}'|g' \
-            ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's|NGINX_SSL_DIR|'${NGINX_SSL_DIR}'|g' \
-            ${NGINX_CONF_DIR}/${domain}.conf
-        sed -i 's|NGINX_LOG_DIR|'${NGINX_LOG_DIR}'|g' \
-            ${NGINX_CONF_DIR}/${domain}.conf
-        if [ "${force_proxy}" == "" ]; then
-            sed -i 's/###//g' ${NGINX_CONF_DIR}/${domain}.conf
-        else
-            sed -i '/###/d' ${NGINX_CONF_DIR}/${domain}.conf
+        echo "${EXAMPLE_CONF}" > "${nginx_conf}"
+        if [ "${cockpit}" != "" ]; then
+            sed -i 's/#cockpit#//g' "${nginx_conf}"
         fi
-        NGINX_RELOAD &>/dev/null
-        install_ssl ${domain}
-        sed -i 's/##//g' ${NGINX_CONF_DIR}/${domain}.conf
-        NGINX_RELOAD &>/dev/null
-        echo "${domain} is ready now."
+        sed -i 's/SERVERNAME/'"${domain}"'/g' "${nginx_conf}"
+        sed -i 's|ADDRESS|'"${proto}://${address}"'|g' "${nginx_conf}"
+        sed -i 's|NGINX_SSL_DIR|'"${NGINX_SSL_DIR}"'|g' "${nginx_conf}"
+        sed -i 's|NGINX_LOG_DIR|'"${NGINX_LOG_DIR}"'|g' "${nginx_conf}"
+        if [ "${force_proxy}" == "" ]; then
+            sed -i 's/###//g' "${nginx_conf}"
+        else
+            sed -i '/###/d' "${nginx_conf}"
+        fi
+        ${NGINX_RELOAD} &>/dev/null
+        install_ssl "${domain}"
+        sed -i 's/##//g' "${nginx_conf}"
+        ${NGINX_RELOAD} &>/dev/null
+        print "${domain} is ready now."
     fi
 }
 
 function uninstall_ssl {
-    domain=$1
-    ${ACME_SH} --remove -d ${domain}
-    rm -rf ${ACME_SH_DIR}/${domain}
+    local domain=$1
+
+    "${ACME_SH}" --force --remove -d "${domain}"
+    rm -rf "${ACME_SH_DIR:?}/${domain}"
 }
 
 function del_domain {
-    domain=$1
-    force_remove_flag=$2
+    local domain=$1
+    local force_remove_flag=$2
+
     if [ -f "${NGINX_CONF_DIR}/${domain}.conf"  ]; then
         if [ "${force_remove_flag}" == "--force" ]; then
-            uninstall_ssl ${domain}
+            uninstall_ssl "${domain}"
         fi
-        rm -f ${NGINX_CONF_DIR}/${domain}.conf
-        rm -f ${NGINX_SSL_DIR}/${domain}.*
+        rm -f "${NGINX_CONF_DIR}/${domain}.conf"
+        rm -f "${NGINX_SSL_DIR}/${domain}".*
         NGINX_RELOAD &>/dev/null
-        echo "${domain} is deleted."
+        print "${domain} is deleted."
     else
-        echo "The file ${NGINX_CONF_DIR}/${domain}.conf does not exist."
+        error "The file ${NGINX_CONF_DIR}/${domain}.conf does not exist."
     fi
 }
 
 function file_exists_wildcard {
-  ls $1 > /dev/null 2>&1
-  if [ "$?" == "0" ]; then
-    echo 1
-  else
-      echo 0
-  fi
+    local input=$1
+
+    if [ "$(ls "${input}" > /dev/null 2>&1)" ]; then
+        echo 0
+    else
+        echo 1
+    fi
+}
+
+function get_proxy_addr {
+    local file=$1
+
+    grep "proxy_pass" "${file}" | \
+        gawk '{
+            i=1
+            while(i<=NR){
+                if($i=="proxy_pass") break;
+                i++;
+            }
+            i++;
+            print substr($i, 0, length($i)-1)
+        }'
 }
 
 function list {
-    echo "domain   proxy_address"
-    echo "------   -------------"
-    if [ "`file_exists_wildcard ${NGINX_CONF_DIR}/*.conf`" == "1" ]; then
-        for f in ${NGINX_CONF_DIR}/*.conf
+    print "domain   proxy_address"
+    print "------   -------------"
+    if [ "$(file_exists_wildcard ${NGINX_CONF_DIR}/*.conf)" == "1" ]; then
+        for f in "${NGINX_CONF_DIR}"/*.conf
         do
-            proxy_address=`
-                grep proxy_pass $f | \
-                    awk '{
-                        i=1
-                        while(i<=NR){
-                            if($i=="proxy_pass") break;
-                            i++;
-                        }
-                        i++;
-                        print substr($i, 0, length($i)-1)
-                    }'
-            `
+            proxy_address="$(get_proxy_addr "$f")"
             if [ "${proxy_address}" != "" ]; then
-                domain=`
-                    echo $f | \
-                    awk -F'/' '{print substr($NF, 0, length($NF)-5)}'
-                `
-                echo ${domain} ${proxy_address}
+                domain=$(echo "$f" | gawk -F'/' '{print substr($NF, 0, length($NF)-5)}')
+                print "${domain} ${proxy_address}"
             fi
         done
     fi
 }
+
+root_check
+prev_check
 
 case $1 in
     "list")
         list
         ;;
     "add")
-        if [ $# -lt 3 ] || [ "`valid_domain $2`" == "0" ] || \
-            [ "`valid_address $3`" == "0" ]; then
+        if [ $# -lt 3 ] || [ "$(valid_domain "$2")" == "1" ] || \
+            [ "$(valid_address "$3")" == "1" ]; then
             help "add"
         fi
         shift 1
-        add_domain $*
+        add_domain "$@"
         ;;
     "del")
-        if [ $# -lt 2 ] || [ "`valid_domain $2`" == "0" ]; then
+        if [ $# -lt 2 ] || [ "$(valid_domain "$2")" == "1" ]; then
             help "del"
         fi
         shift 1
-        del_domain $*
+        del_domain "$@"
         ;;
     *)
         help

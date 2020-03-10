@@ -29,14 +29,12 @@ proxy_ctl list
 proxy_ctl add example.com server.example.com
 proxy_ctl add example.com server.example.com:8080
 proxy_ctl add example.com server.example.com --https # proxy https website
-proxy_ctl add example.com 10.0.2.1 --force # don't send hostname to backend
 proxy_ctl add example.com 10.0.2.1
+proxy_ctl add example.com 10.0.2.1 --force  # don't send hostname to backend
+proxy_ctl add example.com localhost:9090 --cockpit # proxy cockpit
 proxy_ctl del example.com
 proxy_ctl del example.com --force # remove acme.sh's ssl also
 ```
-
-## Note
-- This tool is not compatible with mawk. mawk does not support regex's repetition notation.
 
 ## License
 
