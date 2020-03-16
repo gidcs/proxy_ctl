@@ -12,21 +12,19 @@ ACME_SH="${ACME_SH_DIR}/acme.sh"
 
 DHPARAM_PEM="${NGINX_SSL_DIR}/dhparam.pem"
 NGINX_RELOAD='systemctl force-reload nginx'
-EXAMPLE_CONF='
-server {
-    listen 80;
-    listen [::]:80;
+HTTP_CONF='server {
+    listen HTTP_PORT;
+    listen [::]:HTTP_PORT;
 
     server_name SERVERNAME;
 
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://$host:HTTPS_PORT$request_uri;
     }
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+}'
+HTTPS_CONF_BEFORE='server {
+    listen HTTPS_PORT ssl http2;
+    listen [::]:HTTPS_PORT ssl http2;
 
     server_name SERVERNAME;
 
@@ -66,6 +64,12 @@ server {
     # Do not permit Content-Type sniffing.
     ##add_header X-Content-Type-Options nosniff;
 
+    # other
+'
+HTTPS_CONF_AFTER='
+}'
+
+OTHER_CONF='
     location / {
         #limit_except GET POST {
         #    deny all;
@@ -77,18 +81,42 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+'
+
+COCKPIT_CONF='
+    location / {
+        # Required to proxy the connection to Cockpit
+        proxy_pass ADDRESS;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
         # Required for web sockets to function
-        #cockpit#proxy_http_version 1.1;
-        #cockpit#proxy_buffering off;
-        #cockpit#proxy_set_header Upgrade $http_upgrade;
-        #cockpit#proxy_set_header Connection "upgrade";
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
 
         # Pass ETag header from Cockpit to clients.
         # See: https://github.com/cockpit-project/cockpit/issues/5239
-        #cockpit#gzip off;
+        gzip off;
     }
-}'
+'
+
+TRANSMISSION_CONF='
+    location / {
+        proxy_pass ADDRESS/transmission/web/;
+        proxy_pass_header X-Transmission-Session-Id;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Server $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /rpc {
+        proxy_pass ADDRESS/transmission/rpc;
+    }
+'
+
 
 function print {
     local statements="$*"
@@ -151,32 +179,75 @@ function prev_check {
 
 function help {
     local input=$1
+    local usage_add=(
+            "Usage:"
+            "proxy_ctl add <domain> <ipaddr:port> [option...]"
+            ""
+            "Options:"
+            "-t, --type TYPE    set proxy type [cockpit, transmission]"
+            "-f, --force        do not send hostname"
+            "-h, --http PORT    change listening http port [default: 80]"
+            "-P, --port PORT    change listening https port [default: 443]"
+            "-p, --proto PROTO  change proxy proto [https]"
+        )
+    local usage_del=(
+            "Usage:"
+            "proxy_ctl del <domain> [option...]"
+            ""
+            "Options:"
+            "-f, --force        remove ssl also"
+        )
+    local usage_help=(
+            "Usage:"
+            "proxy_ctl help <command>"
+            ""
+            "Commands:"
+            "add                show help add"
+            "del                show help del"
+            "list               show help list"
+        )
+    local usage_list=(
+            "Usage:"
+            "proxy_ctl list"
+        )
+    local usage_all=(
+            "Usage:"
+            "proxy_ctl help <command>"
+            "proxy_ctl list"
+            "proxy_ctl add <domain> <ipaddr:port> [option...]"
+            "proxy_ctl del <domain> [option...]"
+        )
 
     case "${input}" in
         "add")
-            print "Usage: "
-            print "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
+            for i in "${usage_add[@]}"
+            do
+                print "${i}"
+            done
             ;;
         "del")
-            print "Usage: "
-            print "proxy_ctl del <domain> [--force]"
+            for i in "${usage_del[@]}"
+            do
+                print "${i}"
+            done
+            ;;
+        "help")
+            for i in "${usage_help[@]}"
+            do
+                print "${i}"
+            done
+            ;;
+        "list")
+            for i in "${usage_list[@]}"
+            do
+                print "${i}"
+            done
             ;;
         *)
-            print "Usage: "
-            print "proxy_ctl list"
-            print "proxy_ctl add <domain> <ipaddr:port> [--https] [--force]"
-            print "proxy_ctl del <domain> [--force]"
-            print ""
-            print "Example: "
-            print "proxy_ctl list"
-            print "proxy_ctl add example.com server.example.com"
-            print "proxy_ctl add example.com server.example.com:8080"
-            print "proxy_ctl add example.com server.example.com --https"
-            print "proxy_ctl add example.com 10.0.2.15"
-            print "proxy_ctl add example.com 10.0.2.15 --force"
-            print "proxy_ctl add example.com localhost:9090 --cockpit"
-            print "proxy_ctl del example.com"
-            print "proxy_ctl del example.com --force"
+            for i in "${usage_all[@]}"
+            do
+                print "${i}"
+            done
             ;;
     esac
     exit 1
@@ -268,19 +339,60 @@ function add_domain {
     local address=$2
     local proto="http"
     local force_proxy=""
-    local cockpit=""
+    local type="other"
+    local port="443"
+    local http="80"
     local nginx_conf="${NGINX_CONF_DIR}/${domain}.conf"
+    local local_conf=""
 
     shift 2
-    for arg in "$@"
+    while [ $# -gt 0 ];
     do
-        if [ "$arg" == "--https" ]; then
-            proto="https"
-        elif [ "$arg" == "--force" ]; then
-            force_proxy="force"
-        elif [ "$arg" == "--cockpit" ]; then
-            cockpit="cockpit"
-        fi
+        case "$1" in
+            -t|--type)
+                if [ "$2" != "cockpit" ] && [ "$2" != "transmission" ]; then
+                    help "add"
+                    error "Invalid port number $2"
+                fi
+                type="$2"
+                shift 2
+                ;;
+            -f|--force)
+                force_proxy="true"
+                shift 1
+                ;;
+            -h|--http)
+                if [ "$(valid_port "$2")" != "0" ]; then
+                    help "add"
+                    error "Invalid port number $2"
+                fi
+                http="$2"
+                shift 2
+                ;;
+            -P|--port)
+                if [ "$(valid_port "$2")" != "0" ]; then
+                    help "add"
+                    error "Invalid port number $2"
+                fi
+                port="$2"
+                shift 2
+                ;;
+            -p|--proto)
+                if [ "$2" != "https" ]; then
+                    help "add"
+                    error "Invalid proto $2"
+                fi
+                proto="$2"
+                shift 2
+                ;;
+            -*)
+                help
+                error "Invalid option: $1"
+                ;;
+            *)
+                break
+                ;;
+        esac
     done
 
     if [ -f "${nginx_conf}" ]; then
@@ -299,10 +411,29 @@ function add_domain {
                     "    ipv6: ${domain_ip_v6}\n"
         fi
 
-        echo "${EXAMPLE_CONF}" > "${nginx_conf}"
-        if [ "${cockpit}" != "" ]; then
-            sed -i 's/#cockpit#//g' "${nginx_conf}"
+        # clean up
+        echo "" > "${nginx_conf}"
+
+        # write http config
+        echo "${HTTP_CONF}" >> "${nginx_conf}"
+        sed -i 's/HTTP_PORT/'"${http}"'/g' "${nginx_conf}"
+        if [ "${port}" == "443" ]; then
+            sed -i 's/:HTTPS_PORT//g' "${nginx_conf}"
         fi
+
+        # write https config
+        echo "${HTTPS_CONF_BEFORE}" >> "${nginx_conf}"
+        if [ "${type}" == "cockpit" ]; then
+            echo "${COCKPIT_CONF}" >> "${nginx_conf}"
+        elif [ "${type}" == "transmission" ]; then
+            echo "${TRANSMISSION_CONF}" >> "${nginx_conf}"
+        else
+            echo "${OTHER_CONF}" >> "${nginx_conf}"
+        fi
+        echo "${HTTPS_CONF_AFTER}" >> "${nginx_conf}"
+
+        # modify others
+        sed -i 's/HTTPS_PORT/'"${port}"'/g' "${nginx_conf}"
         sed -i 's/SERVERNAME/'"${domain}"'/g' "${nginx_conf}"
         sed -i 's|ADDRESS|'"${proto}://${address}"'|g' "${nginx_conf}"
         sed -i 's|NGINX_SSL_DIR|'"${NGINX_SSL_DIR}"'|g' "${nginx_conf}"
@@ -312,6 +443,8 @@ function add_domain {
         else
             sed -i '/###/d' "${nginx_conf}"
         fi
+
+        # reload and install ssl
         ${NGINX_RELOAD} &>/dev/null
         install_ssl "${domain}"
         sed -i 's/##//g' "${nginx_conf}"
@@ -329,15 +462,32 @@ function uninstall_ssl {
 
 function del_domain {
     local domain=$1
-    local force_remove_flag=$2
+    local force=""
 
+    shift 1
+    while [ $# -gt 0 ];
+    do
+        case "$1" in
+            -f|--force)
+                force="true"
+                shift 1
+                ;;
+            -*)
+                help
+                error "Invalid option: $1"
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
     if [ -f "${NGINX_CONF_DIR}/${domain}.conf"  ]; then
-        if [ "${force_remove_flag}" == "--force" ]; then
+        if [ "${force}" != "" ]; then
             uninstall_ssl "${domain}"
         fi
         rm -f "${NGINX_CONF_DIR}/${domain}.conf"
         rm -f "${NGINX_SSL_DIR}/${domain}".*
-        NGINX_RELOAD &>/dev/null
+        ${NGINX_RELOAD} &>/dev/null
         print "${domain} is deleted."
     else
         error "The file ${NGINX_CONF_DIR}/${domain}.conf does not exist."
@@ -347,38 +497,46 @@ function del_domain {
 function file_exists_wildcard {
     local input=$1
 
-    if [ "$(ls "${input}" > /dev/null 2>&1)" ]; then
-        echo 0
-    else
-        echo 1
-    fi
+    ls "${input}" > /dev/null 2>&1
+    echo "$?"
 }
 
 function get_proxy_addr {
     local file=$1
 
-    grep "proxy_pass" "${file}" | \
-        gawk '{
-            i=1
-            while(i<=NR){
-                if($i=="proxy_pass") break;
-                i++;
-            }
-            i++;
-            print substr($i, 0, length($i)-1)
-        }'
+    gawk '/proxy_pass/ {
+        i=1
+        if ($0 !~ /^[[:space:]]*#/){
+            print substr($2, 0, length($2)-1)
+        }
+    }' "${file}"
+}
+
+function get_listen_port {
+    local file=$1
+
+    gawk '/listen [0-9]* ssl.*/ {
+        if ($0 !~ /^[[:space:]]*#/){
+            print $2
+        }
+    }' "${file}"
 }
 
 function list {
-    print "domain   proxy_address"
-    print "------   -------------"
-    if [ "$(file_exists_wildcard ${NGINX_CONF_DIR}/*.conf)" == "1" ]; then
+    local proxy_address=""
+    local port=""
+
+    printf "%-30s %5s %35s\n" "Domain Name" "Port" "Proxy Address"
+    printf "%0.1s" "="{1..72}
+    printf "\n"
+    if [ "$(file_exists_wildcard ${NGINX_CONF_DIR}/*.conf)" == "0" ]; then
         for f in "${NGINX_CONF_DIR}"/*.conf
         do
             proxy_address="$(get_proxy_addr "$f")"
-            if [ "${proxy_address}" != "" ]; then
-                domain=$(echo "$f" | gawk -F'/' '{print substr($NF, 0, length($NF)-5)}')
-                print "${domain} ${proxy_address}"
+            port="$(get_listen_port "$f")"
+            domain=$(echo "$f" | gawk -F'/' '{print substr($NF, 0, length($NF)-5)}')
+            if [ "${proxy_address}" != "" ] && [ "${port}" != "" ]; then
+                printf "%-30s %5d %35s\n" "${domain}" "${port}" "${proxy_address}"
             fi
         done
     fi
@@ -405,6 +563,10 @@ case $1 in
         fi
         shift 1
         del_domain "$@"
+        ;;
+    "help")
+        shift 1
+        help "$@"
         ;;
     *)
         help
