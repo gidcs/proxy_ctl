@@ -504,10 +504,16 @@ function file_exists_wildcard {
 function get_proxy_addr {
     local file=$1
 
-    gawk '/proxy_pass/ {
-        i=1
-        if ($0 !~ /^[[:space:]]*#/){
-            print substr($2, 0, length($2)-1)
+    gawk '/location/ {
+        if ($0 !~ /^[[:space:]]*#/ && $1 == "location"){
+            location=$2
+            #print($2)
+        }
+    } /proxy_pass/ {
+        if(location == "/"){
+            if ($0 !~ /^[[:space:]]*#/ && $1 == "proxy_pass"){
+                print substr($2, 0, length($2)-1)
+            }
         }
     }' "${file}"
 }
