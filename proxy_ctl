@@ -23,13 +23,13 @@ HTTP_CONF='server {
     }
 }'
 HTTPS_CONF_BEFORE='server {
-    listen HTTPS_PORT ssl http2;
-    listen [::]:HTTPS_PORT ssl http2;
+    ##listen HTTPS_PORT ssl http2;
+    ##listen [::]:HTTPS_PORT ssl http2;
 
     server_name SERVERNAME;
 
-    access_log  NGINX_LOG_DIR/SERVERNAME.access.log main;
-    error_log  NGINX_LOG_DIR/SERVERNAME.error.log error;
+    access_log  NGINX_LOG_DIR/SERVERNAME.access.log;
+    error_log  NGINX_LOG_DIR/SERVERNAME.error.log;
 
     ##ssl on;
     ##ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
